@@ -8,7 +8,6 @@ M.config = {
 -- Shared state across modules.
 M.state = {
   base_url = nil,
-  panel_open = false,
 }
 
 --- Setup the plugin. Call with require('curls').setup() or require('curls').setup({ base_url = '...' }).
