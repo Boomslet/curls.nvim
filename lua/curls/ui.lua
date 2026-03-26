@@ -137,6 +137,17 @@ H.setup_keymaps = function()
 
   -- Detail: '<Esc>' returns to the list
   vim.keymap.set('n', '<Esc>', function()
+    -- Save user's curl edits before locking the buffer
+    local ep = H.endpoints[H.prev_row]
+    if ep then
+      local buf_lines = vim.api.nvim_buf_get_lines(H.detail_buf, 0, -1, false)
+      local curl_lines = {}
+      for _, line in ipairs(buf_lines) do
+        if vim.trim(line) == '' then break end
+        table.insert(curl_lines, line)
+      end
+      ep.edited_curl = curl_lines
+    end
     vim.bo[H.detail_buf].modifiable = false
     vim.api.nvim_set_current_win(H.list_win)
   end, { buffer = H.detail_buf, nowait = true })
@@ -219,8 +230,11 @@ H.render_detail = function()
   local ep = H.endpoints[H.prev_row]
   if not ep then return end
 
-  local lines = H.build_curl(ep)
-  local curl_line_count = #lines
+  -- Use saved curl lines if the user has edited them, otherwise generate fresh
+  local curl_lines = ep.edited_curl or H.build_curl(ep)
+  local curl_line_count = #curl_lines
+
+  local lines = vim.list_extend({}, curl_lines)
 
   if ep.last_response then
     table.insert(lines, '')
@@ -270,7 +284,13 @@ H.build_curl = function(ep)
 
   if H.BODY_METHODS[ep.method] then
     table.insert(parts, "    -H 'Content-Type: application/json' \\")
-    local body = H.build_json_body(ep.fields or {})
+    local body_fields = {}
+    local path_param_set = {}
+    for _, p in ipairs(ep.path_params or {}) do path_param_set[p] = true end
+    for k, v in pairs(ep.fields or {}) do
+      if not path_param_set[k] then body_fields[k] = v end
+    end
+    local body = H.build_json_body(body_fields)
     table.insert(parts, ("    -d '%s' \\"):format(body))
   end
 
