@@ -32,19 +32,12 @@ M.open = function()
   end)
 end
 
---- Close the curls panel.
-M.close = function()
-  local ui = require('curls.ui')
-  ui.close()
-end
-
 -- ============================================================================
 -- Helpers
 -- ============================================================================
 
 H.create_commands = function()
-  vim.api.nvim_create_user_command('CurlsOpen', function() M.open() end, {})
-  vim.api.nvim_create_user_command('CurlsClose', function() M.close() end, {})
+  vim.api.nvim_create_user_command('Curls', function() M.open() end, {})
 end
 
 --- Prompt for base URL if not set, then call the callback.

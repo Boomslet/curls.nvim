@@ -7,7 +7,7 @@ Encore.ts first. Extensible to Express, Hono, Next.js later.
 ## Core workflow
 
 1. You're editing a TS file with Encore.ts endpoints.
-2. You trigger `:CurlsOpen`.
+2. You trigger `:Curls`.
 3. A floating panel opens (80% of screen) showing all endpoints in the current file, listed in source order.
 4. Navigate with `j`/`k`. The bottom section shows the pre-filled curl for the selected endpoint.
 5. Press `i` to edit the curl values in place. Press `<Esc>` to return to the list.
@@ -62,8 +62,6 @@ curl \
 | `dd`      | list    | Remove endpoint from list           |
 | `Y`       | list    | Yank curl to clipboard              |
 | `<Esc>`   | edit    | Return to list                      |
-| `<Esc>`   | list    | Close panel                         |
-| `q`       | any     | Close panel                         |
 | `?`       | any     | Toggle help line at bottom          |
 
 ## Parsing
@@ -94,7 +92,7 @@ This is the whole point — you shouldn't have to look up what fields an endpoin
 Saves to `.curls.json` at project root.
 
 **Scanning:**
-- Endpoints are scanned and cached on first `:CurlsOpen`.
+- Endpoints are scanned and cached on first `:Curls`.
 - Every subsequent open re-scans for new endpoints and merges them in, but keeps existing user values and endpoint ordering intact.
 
 **Stored data:**
@@ -114,8 +112,7 @@ Extensible: each framework is a parser module implementing the same interface. E
 
 ## Commands
 
-- `:CurlsOpen` — open the panel for the current file
-- `:CurlsClose` — close the panel
+- `:Curls` — open the panel for the current file. Close with `:q`.
 
 ## Style
 
