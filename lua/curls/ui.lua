@@ -11,6 +11,7 @@ H.detail_buf = nil
 H.endpoints = {}
 H.base_url = nil
 H.prev_row = nil
+H.help_visible = false
 
 -- ============================================================================
 -- Public
@@ -32,6 +33,7 @@ M.open = function(source_buf, base_url)
 
   H.render_list()
   H.render_detail()
+  H.render_help()
 end
 
 -- ============================================================================
@@ -106,6 +108,12 @@ H.setup_keymaps = function()
     H.execute_curl()
   end, { buffer = H.list_buf, nowait = true })
 
+  -- List: '?' toggles help line
+  vim.keymap.set('n', '?', function()
+    H.help_visible = not H.help_visible
+    H.render_help()
+  end, { buffer = H.list_buf, nowait = true })
+
   -- Detail: '<Esc>' returns to the list
   vim.keymap.set('n', '<Esc>', function()
     vim.bo[H.detail_buf].modifiable = false
@@ -157,6 +165,19 @@ H.render_list = function()
   H.set_lines(H.list_buf, lines)
   vim.api.nvim_win_set_cursor(H.list_win, { 1, 0 })
   H.prev_row = 1
+end
+
+H.render_help = function()
+  if not H.list_win or not vim.api.nvim_win_is_valid(H.list_win) then return end
+
+  local footer
+  if H.help_visible then
+    footer = ' i:edit  Space:fire  ?:close help '
+  else
+    footer = ' ? for help '
+  end
+
+  vim.api.nvim_win_set_config(H.list_win, { footer = footer, footer_pos = 'right' })
 end
 
 H.render_list_line = function(row)
@@ -393,6 +414,7 @@ H.reset = function()
   H.endpoints = {}
   H.base_url = nil
   H.prev_row = nil
+  H.help_visible = false
 end
 
 return M

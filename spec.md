@@ -28,7 +28,6 @@ Two-section floating window, 80% of screen, centered.
 - Endpoints from the current buffer, listed in the order they appear in source.
 - Status indicators show last response: `[200 42ms]`, `[404 12ms]`, or `[—]` for never-run.
 - `j`/`k` to navigate. Selection updates the detail section below.
-- `dd` to remove an endpoint from the list.
 - `Y` to yank the curl to clipboard.
 
 **Bottom: detail section**
@@ -59,8 +58,6 @@ curl \
 | `j`/`k`   | list    | Navigate endpoints                  |
 | `<Space>` | list    | Fire the curl                       |
 | `i`       | list    | Edit curl in detail section         |
-| `dd`      | list    | Remove endpoint from list           |
-| `Y`       | list    | Yank curl to clipboard              |
 | `<Esc>`   | edit    | Return to list                      |
 | `?`       | any     | Toggle help line at bottom          |
 
