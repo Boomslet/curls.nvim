@@ -2,6 +2,23 @@ local M = {} -- Module (public)
 local H = {} -- Helpers (private)
 
 H.BODY_METHODS = { POST = true, PUT = true, PATCH = true }
+H.NS = vim.api.nvim_create_namespace('curls')
+
+-- Default highlight groups — users can override by defining these before loading the plugin
+vim.api.nvim_set_hl(0, 'CurlsStatus2xx', { default = true, link = 'DiagnosticOk' })
+vim.api.nvim_set_hl(0, 'CurlsStatus3xx', { default = true, link = 'DiagnosticInfo' })
+vim.api.nvim_set_hl(0, 'CurlsStatus4xx', { default = true, link = 'DiagnosticWarn' })
+vim.api.nvim_set_hl(0, 'CurlsStatus5xx', { default = true, link = 'DiagnosticError' })
+vim.api.nvim_set_hl(0, 'CurlsStatusErr', { default = true, link = 'DiagnosticError' })
+
+H.STATUS_TEXT = {
+  [200] = 'OK', [201] = 'Created', [204] = 'No Content',
+  [301] = 'Moved', [302] = 'Found', [304] = 'Not Modified',
+  [400] = 'Bad Request', [401] = 'Unauthorized', [403] = 'Forbidden',
+  [404] = 'Not Found', [405] = 'Method Not Allowed', [409] = 'Conflict',
+  [422] = 'Unprocessable', [429] = 'Too Many Requests',
+  [500] = 'Internal Server Error', [502] = 'Bad Gateway', [503] = 'Service Unavailable',
+}
 
 -- State for the current panel session
 H.list_win = nil
@@ -203,15 +220,20 @@ H.render_detail = function()
   if not ep then return end
 
   local lines = H.build_curl(ep)
+  local curl_line_count = #lines
 
   if ep.last_response then
     table.insert(lines, '')
-    table.insert(lines, '  ' .. H.format_status(ep))
+    table.insert(lines, H.format_status_detail(ep))
     table.insert(lines, '')
     vim.list_extend(lines, vim.tbl_map(function(l) return '  ' .. l end, vim.split(ep.last_response, '\n')))
   end
 
   H.set_lines(H.detail_buf, lines)
+
+  if ep.last_response then
+    H.highlight_status(ep.last_status, curl_line_count + 1)
+  end
 end
 
 -- ============================================================================
@@ -222,14 +244,22 @@ end
 ---@return string
 H.format_endpoint = function(ep)
   local method = string.format('%-6s', ep.method)
-  local status = ep.last_status and H.format_status(ep) or '[—]'
+  local status = ep.last_status and H.format_status_short(ep) or '[—]'
   return string.format(' %s %s  %s', method, ep.path, status)
 end
 
 ---@param ep table
 ---@return string
-H.format_status = function(ep)
+H.format_status_short = function(ep)
   return string.format('[%d %dms]', ep.last_status, ep.last_time or 0)
+end
+
+---@param ep table
+---@return string
+H.format_status_detail = function(ep)
+  local text = H.STATUS_TEXT[ep.last_status] or ''
+  local size = ep.last_response and #ep.last_response or 0
+  return string.format('  %d %s  %dms  %d bytes', ep.last_status, text, ep.last_time or 0, size)
 end
 
 ---@param ep table
@@ -424,6 +454,24 @@ end
 -- ============================================================================
 -- Utilities
 -- ============================================================================
+
+H.highlight_status = function(status_code, line_nr)
+  if not H.detail_buf or not vim.api.nvim_buf_is_valid(H.detail_buf) then return end
+
+  local hl_group
+  if status_code >= 500 then hl_group = 'CurlsStatus5xx'
+  elseif status_code >= 400 then hl_group = 'CurlsStatus4xx'
+  elseif status_code >= 300 then hl_group = 'CurlsStatus3xx'
+  elseif status_code >= 200 then hl_group = 'CurlsStatus2xx'
+  else hl_group = 'CurlsStatusErr'
+  end
+
+  vim.api.nvim_buf_set_extmark(H.detail_buf, H.NS, line_nr, 0, {
+    end_col = 0,
+    end_row = line_nr + 1,
+    hl_group = hl_group,
+  })
+end
 
 H.set_lines = function(buf, lines, start, stop)
   vim.bo[buf].modifiable = true
