@@ -95,8 +95,7 @@ end
 -- ============================================================================
 
 H.setup_keymaps = function()
-  -- List: 'i' enters edit mode in the detail window
-  vim.keymap.set('n', 'i', function()
+  vim.keymap.set('n', '<CR>', function()
     if #H.endpoints == 0 then return end
     vim.bo[H.detail_buf].modifiable = true
     vim.api.nvim_set_current_win(H.detail_win)
@@ -137,12 +136,25 @@ H.setup_autocmds = function()
     end,
   })
 
-  -- Clean up if either buffer is closed
+  -- Close both windows if focus leaves either one (ctrl+w, :q on detail, etc.)
   for _, buf in ipairs({ H.list_buf, H.detail_buf }) do
     vim.api.nvim_create_autocmd('BufWipeout', {
       buffer = buf,
       once = true,
       callback = H.reset,
+    })
+
+    vim.api.nvim_create_autocmd('WinLeave', {
+      buffer = buf,
+      callback = function()
+        -- Allow switching between the two panel windows
+        vim.schedule(function()
+          local cur_win = vim.api.nvim_get_current_win()
+          if cur_win ~= H.list_win and cur_win ~= H.detail_win then
+            H.reset()
+          end
+        end)
+      end,
     })
   end
 end
@@ -172,7 +184,7 @@ H.render_help = function()
 
   local footer
   if H.help_visible then
-    footer = ' i:edit  Space:fire  ?:close help '
+    footer = ' Enter:edit  Space:fire  ?:close help '
   else
     footer = ' ? for help '
   end
@@ -404,8 +416,10 @@ H.set_lines = function(buf, lines, start, stop)
 end
 
 H.reset = function()
-  if H.detail_win and vim.api.nvim_win_is_valid(H.detail_win) then
-    vim.api.nvim_win_close(H.detail_win, true)
+  for _, win in ipairs({ H.list_win, H.detail_win }) do
+    if win and vim.api.nvim_win_is_valid(win) then
+      vim.api.nvim_win_close(win, true)
+    end
   end
   H.list_win = nil
   H.list_buf = nil

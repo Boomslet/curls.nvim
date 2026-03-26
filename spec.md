@@ -57,7 +57,7 @@ curl \
 |-----------|---------|-------------------------------------|
 | `j`/`k`   | list    | Navigate endpoints                  |
 | `<Space>` | list    | Fire the curl                       |
-| `i`       | list    | Edit curl in detail section         |
+| `<CR>`    | list    | Edit curl in detail section         |
 | `<Esc>`   | edit    | Return to list                      |
 | `?`       | any     | Toggle help line at bottom          |
 
