@@ -6,12 +6,65 @@ Encore.ts first. Extensible to Express, Hono, Next.js later.
 
 ## Core workflow
 
-1. You're editing a TS file. Cursor is on or near an `api()` call.
-2. You trigger `:CurlsRun` (or a keymap).
-3. The plugin parses the endpoint — method, path, request body fields from the TS types.
-4. An editable buffer opens in a split with the curl pre-filled: method, URL with path param placeholders, JSON body scaffolded from the resolved types.
-5. You fill in real values, hit `<CR>` to execute.
-6. A split buffer opens below showing the response — syntax-highlighted JSON with status code and timing.
+1. You're editing a TS file with Encore.ts endpoints.
+2. You trigger `:CurlsOpen`.
+3. A floating panel opens (80% of screen) showing all endpoints in the current file, listed in source order.
+4. Navigate with `j`/`k`. The bottom section shows the pre-filled curl for the selected endpoint.
+5. Press `i` to edit the curl values in place. Press `<Esc>` to return to the list.
+6. Press `<Space>` to fire the curl. Response appears below the curl in the detail section — syntax-highlighted JSON with status code and timing.
+
+## The panel
+
+Two-section floating window, 80% of screen, centered.
+
+**Top: endpoint list**
+
+```
+ GET  /items/:id         [200 42ms]
+ POST /users             [—]
+ PUT  /items/:id         [200 18ms]
+```
+
+- Endpoints from the current buffer, listed in the order they appear in source.
+- Status indicators show last response: `[200 42ms]`, `[404 12ms]`, or `[—]` for never-run.
+- `j`/`k` to navigate. Selection updates the detail section below.
+- `dd` to remove an endpoint from the list.
+- `Y` to yank the curl to clipboard.
+
+**Bottom: detail section**
+
+Shows the curl command for the selected endpoint, and the last response if one exists.
+
+```
+curl \
+  -s -X POST \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "name": "example",
+    "count": 0
+  }' \
+  'http://localhost:4000/items/{id}'
+
+{ "id": 1, "name": "Widget" }
+```
+
+- `i` drops the cursor into this section to edit values. Normal vim editing. `<Esc>` returns focus to the list.
+- `<Space>` executes the curl. Response replaces the previous response below the curl.
+- Response is syntax-highlighted JSON. Header line shows status code and response time.
+
+## Keybindings
+
+| Key       | Context | Action                              |
+|-----------|---------|-------------------------------------|
+| `j`/`k`   | list    | Navigate endpoints                  |
+| `<Space>` | list    | Fire the curl                       |
+| `i`       | list    | Edit curl in detail section         |
+| `dd`      | list    | Remove endpoint from list           |
+| `Y`       | list    | Yank curl to clipboard              |
+| `<Esc>`   | edit    | Return to list                      |
+| `<Esc>`   | list    | Close panel                         |
+| `q`       | any     | Close panel                         |
+| `?`       | any     | Toggle help line at bottom          |
 
 ## Parsing
 
@@ -36,33 +89,15 @@ This is the whole point — you shouldn't have to look up what fields an endpoin
 - Prompted via `vim.ui.input` on first run. Remembered for the session.
 - Can be pre-configured in `setup()` if desired.
 
-## Editable curl buffer
+## Scanning & persistence
 
-- Opens as a **split** (not floating) so it stays accessible while you reference other code.
-- Curl formatted multi-line for readability:
-  ```
-  curl \
-    -s -X POST \
-    -H 'Content-Type: application/json' \
-    -d '{
-      "name": "example",
-      "count": 0
-    }' \
-    'http://localhost:4000/items/{id}'
-  ```
-- Edit values in place, `<CR>` to execute, `q` to close.
-- Last-used values saved to the persistence file so they pre-fill next time.
+Saves to `.curls.json` at project root.
 
-## Response viewer
+**Scanning:**
+- Endpoints are scanned and cached on first `:CurlsOpen`.
+- Every subsequent open re-scans for new endpoints and merges them in, but keeps existing user values and endpoint ordering intact.
 
-- Opens in a **split buffer** below the curl editor.
-- Syntax-highlighted JSON (filetype set to `json`), foldable for large responses.
-- Header line shows: status code, response time.
-
-## Persistence
-
-Saves to `.curls.json` at project root. Stores:
-
+**Stored data:**
 - **Discovered endpoints**: name, file, line, method, path, resolved fields.
 - **User values**: the actual IDs, tokens, body values you typed in — pre-filled on next run.
 - **Response history**: last N responses per endpoint (timestamp, status code, body).
@@ -79,10 +114,8 @@ Extensible: each framework is a parser module implementing the same interface. E
 
 ## Commands
 
-- `:CurlsRun` — parse endpoint at cursor, open editable curl, execute on `<CR>`
-- `:CurlsList` — pick from all known endpoints in the project
-- `:CurlsEnv [url]` — set/change the base URL
-- `:CurlsScan` — re-scan current buffer; `:CurlsScan!` for full project
+- `:CurlsOpen` — open the panel for the current file
+- `:CurlsClose` — close the panel
 
 ## Style
 
