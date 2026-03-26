@@ -29,7 +29,7 @@ M.open = function()
   local source_buf = vim.api.nvim_get_current_buf()
   H.ensure_base_url(function()
     local ui = require('curls.ui')
-    ui.open(source_buf)
+    ui.open(source_buf, M.state.base_url)
   end)
 end
 

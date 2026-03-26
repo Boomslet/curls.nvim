@@ -8,16 +8,19 @@ H.win = nil
 H.buf = nil
 H.endpoints = {}
 H.source_buf = nil
+H.base_url = nil
 H.list_len = 0
 H.prev_row = nil
 
 ---@param source_buf number buffer to parse endpoints from
-M.open = function(source_buf)
+---@param base_url string
+M.open = function(source_buf, base_url)
   if H.win and vim.api.nvim_win_is_valid(H.win) then
     return
   end
 
   H.source_buf = source_buf
+  H.base_url = base_url
   H.endpoints = require('curls.parse').parse_buffer(H.source_buf)
 
   H.buf = vim.api.nvim_create_buf(false, true)
@@ -60,6 +63,7 @@ H.reset = function()
   H.buf = nil
   H.endpoints = {}
   H.source_buf = nil
+  H.base_url = nil
   H.list_len = 0
   H.prev_row = nil
 end
@@ -127,7 +131,7 @@ end
 ---@param ep table
 ---@return string[]
 H.build_curl = function(ep)
-  local url = require('curls.init').state.base_url .. ep.path
+  local url = H.base_url .. ep.path
 
   for _, param in ipairs(ep.path_params or {}) do
     url = url:gsub(':' .. param, '{' .. param .. '}')
