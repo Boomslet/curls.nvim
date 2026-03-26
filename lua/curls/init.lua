@@ -2,34 +2,60 @@ local M = {} -- Module (public)
 local H = {} -- Helpers (private)
 
 M.config = {
-  base_url = nil, -- prompted on first run if nil
+  base_url = nil,
 }
 
--- Shared state across modules.
+H.DEFAULT_BASE_URL = 'http://localhost:4000'
+
 M.state = {
   base_url = nil,
 }
 
---- Setup the plugin. Call with require('curls').setup() or require('curls').setup({ base_url = '...' }).
 ---@param opts? table
 M.setup = function(opts)
   opts = opts or {}
   M.config = vim.tbl_deep_extend('force', M.config, opts)
 
-  if M.config.base_url then
-    M.state.base_url = M.config.base_url
-  end
+  -- Load persisted data, config takes precedence
+  local store = require('curls.store')
+  local saved = store.load()
+
+  M.state.base_url = M.config.base_url or saved.base_url or H.DEFAULT_BASE_URL
+  M.state.saved_curls = saved.curls or {}
 
   H.create_commands()
 end
 
---- Open the curls panel for the current buffer.
 M.open = function()
   local source_buf = vim.api.nvim_get_current_buf()
-  H.ensure_base_url(function()
-    local ui = require('curls.ui')
-    ui.open(source_buf, M.state.base_url)
-  end)
+  local ui = require('curls.ui')
+  ui.open(source_buf, {
+    base_url = M.state.base_url,
+    saved_curls = M.state.saved_curls,
+    on_close = M.save,
+  })
+end
+
+--- Save current state to disk. Called by UI on panel close.
+M.save = function(endpoints, base_url)
+  if base_url then
+    M.state.base_url = base_url
+  end
+
+  local store = require('curls.store')
+  local curls = {}
+  for _, ep in ipairs(endpoints or {}) do
+    if ep.edited_curl then
+      curls[store.endpoint_key(ep)] = ep.edited_curl
+    end
+  end
+
+  store.save({
+    base_url = M.state.base_url,
+    curls = curls,
+  })
+
+  M.state.saved_curls = curls
 end
 
 -- ============================================================================
@@ -38,24 +64,6 @@ end
 
 H.create_commands = function()
   vim.api.nvim_create_user_command('Curls', function() M.open() end, {})
-end
-
---- Prompt for base URL if not set, then call the callback.
----@param callback function
-H.ensure_base_url = function(callback)
-  if M.state.base_url then
-    callback()
-    return
-  end
-
-  vim.ui.input({ prompt = 'Base URL: ', default = 'http://localhost:4000' }, function(input)
-    if not input or input == '' then
-      return
-    end
-    -- Strip trailing slash
-    M.state.base_url = input:gsub('/$', '')
-    callback()
-  end)
 end
 
 return M

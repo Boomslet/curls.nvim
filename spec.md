@@ -86,18 +86,15 @@ This is the whole point — you shouldn't have to look up what fields an endpoin
 
 ## Scanning & persistence
 
-Saves to `.curls.json` at project root.
+Saves to `~/.local/share/nvim/curls/<project_hash>.json`, keyed by git remote URL (falls back to cwd).
 
 **Scanning:**
-- Endpoints are scanned and cached on first `:Curls`.
-- Every subsequent open re-scans for new endpoints and merges them in, but keeps existing user values and endpoint ordering intact.
+- Endpoints are scanned from the current buffer on every `:Curls`.
+- Persisted curl edits are merged back onto matching endpoints.
 
 **Stored data:**
-- **Discovered endpoints**: name, file, line, method, path, resolved fields.
-- **User values**: the actual IDs, tokens, body values you typed in — pre-filled on next run.
-- **Response history**: last N responses per endpoint (timestamp, status code, body).
-
-Human-readable, optionally version-controllable.
+- **Base URL**: remembered per project, no re-prompting.
+- **Edited curls**: any curl commands you've customised are saved and restored on next open.
 
 ## Framework support
 

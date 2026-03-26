@@ -32,6 +32,7 @@ H.detail_win = nil
 H.detail_buf = nil
 H.endpoints = {}
 H.base_url = nil
+H.on_close = nil
 H.prev_row = nil
 H.help_visible = false
 
@@ -40,14 +41,26 @@ H.help_visible = false
 -- ============================================================================
 
 ---@param source_buf number buffer to parse endpoints from
----@param base_url string
-M.open = function(source_buf, base_url)
+---@param opts { base_url: string, saved_curls?: table<string, string[]>, on_close?: function }
+M.open = function(source_buf, opts)
   if H.list_win and vim.api.nvim_win_is_valid(H.list_win) then
     return
   end
 
-  H.base_url = base_url
+  H.base_url = opts.base_url
+  H.on_close = opts.on_close
   H.endpoints = require('curls.parse').parse_buffer(source_buf)
+
+  -- Restore persisted curl edits
+  if opts.saved_curls then
+    local store = require('curls.store')
+    for _, ep in ipairs(H.endpoints) do
+      local key = store.endpoint_key(ep)
+      if opts.saved_curls[key] then
+        ep.edited_curl = opts.saved_curls[key]
+      end
+    end
+  end
 
   H.create_windows()
   H.setup_keymaps()
@@ -127,6 +140,15 @@ H.setup_keymaps = function()
   vim.keymap.set('n', '<Space>', function()
     if #H.endpoints == 0 then return end
     H.execute_curl()
+  end, { buffer = H.list_buf, nowait = true })
+
+  -- List: 'u' changes the base URL
+  vim.keymap.set('n', 'u', function()
+    vim.ui.input({ prompt = 'Base URL: ', default = H.base_url }, function(input)
+      if not input or input == '' then return end
+      H.base_url = input:gsub('/$', '')
+      H.render_detail()
+    end)
   end, { buffer = H.list_buf, nowait = true })
 
   -- List: '?' toggles help line
@@ -218,7 +240,7 @@ H.render_help = function()
 
   local footer
   if H.help_visible then
-    footer = ' Enter:edit  Space:fire  ?:close help '
+    footer = ' Enter:edit  Space:fire  u:base url  ?:close help '
   else
     footer = ' ? for help '
   end
@@ -516,6 +538,10 @@ H.set_lines = function(buf, lines, start, stop)
 end
 
 H.reset = function()
+  if H.on_close then
+    pcall(H.on_close, H.endpoints, H.base_url)
+  end
+
   for _, win in ipairs({ H.list_win, H.detail_win }) do
     if win and vim.api.nvim_win_is_valid(win) then
       vim.api.nvim_win_close(win, true)
@@ -527,6 +553,7 @@ H.reset = function()
   H.detail_buf = nil
   H.endpoints = {}
   H.base_url = nil
+  H.on_close = nil
   H.prev_row = nil
   H.help_visible = false
 end
