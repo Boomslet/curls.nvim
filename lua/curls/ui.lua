@@ -10,6 +10,11 @@ vim.api.nvim_set_hl(0, 'CurlsStatus3xx', { default = true, link = 'DiagnosticInf
 vim.api.nvim_set_hl(0, 'CurlsStatus4xx', { default = true, link = 'DiagnosticWarn' })
 vim.api.nvim_set_hl(0, 'CurlsStatus5xx', { default = true, link = 'DiagnosticError' })
 vim.api.nvim_set_hl(0, 'CurlsStatusErr', { default = true, link = 'DiagnosticError' })
+vim.api.nvim_set_hl(0, 'CurlsMethodGet', { default = true, link = 'Function' })
+vim.api.nvim_set_hl(0, 'CurlsMethodPost', { default = true, link = 'Keyword' })
+vim.api.nvim_set_hl(0, 'CurlsMethodPut', { default = true, link = 'Type' })
+vim.api.nvim_set_hl(0, 'CurlsMethodPatch', { default = true, link = 'Type' })
+vim.api.nvim_set_hl(0, 'CurlsMethodDelete', { default = true, link = 'DiagnosticError' })
 
 H.STATUS_TEXT = {
   [200] = 'OK', [201] = 'Created', [204] = 'No Content',
@@ -192,6 +197,7 @@ H.render_list = function()
   end
 
   H.set_lines(H.list_buf, lines)
+  H.highlight_methods()
   vim.api.nvim_win_set_cursor(H.list_win, { 1, 0 })
   H.prev_row = 1
 end
@@ -207,12 +213,6 @@ H.render_help = function()
   end
 
   vim.api.nvim_win_set_config(H.list_win, { footer = footer, footer_pos = 'right' })
-end
-
-H.render_list_line = function(row)
-  local ep = H.endpoints[row]
-  if not ep then return end
-  H.set_lines(H.list_buf, { H.format_endpoint(ep) }, row - 1, row)
 end
 
 H.render_detail = function()
@@ -242,16 +242,11 @@ end
 
 ---@param ep table
 ---@return string
-H.format_endpoint = function(ep)
-  local method = string.format('%-6s', ep.method)
-  local status = ep.last_status and H.format_status_short(ep) or '[—]'
-  return string.format(' %s %s  %s', method, ep.path, status)
-end
+H.METHOD_COL_START = 1  -- after leading space
+H.METHOD_COL_END = 7    -- 6-char padded method
 
----@param ep table
----@return string
-H.format_status_short = function(ep)
-  return string.format('[%d %dms]', ep.last_status, ep.last_time or 0)
+H.format_endpoint = function(ep)
+  return string.format(' %-6s %s', ep.method, ep.path)
 end
 
 ---@param ep table
@@ -344,7 +339,6 @@ H.execute_curl = function()
         end
 
         H.render_detail()
-        H.render_list_line(H.prev_row)
       end)
     end,
   })
@@ -454,6 +448,28 @@ end
 -- ============================================================================
 -- Utilities
 -- ============================================================================
+
+H.METHOD_HL = {
+  GET = 'CurlsMethodGet',
+  POST = 'CurlsMethodPost',
+  PUT = 'CurlsMethodPut',
+  PATCH = 'CurlsMethodPatch',
+  DELETE = 'CurlsMethodDelete',
+}
+
+H.highlight_methods = function()
+  if not H.list_buf or not vim.api.nvim_buf_is_valid(H.list_buf) then return end
+
+  for i, ep in ipairs(H.endpoints) do
+    local hl = H.METHOD_HL[ep.method]
+    if hl then
+      vim.api.nvim_buf_set_extmark(H.list_buf, H.NS, i - 1, H.METHOD_COL_START, {
+        end_col = H.METHOD_COL_END,
+        hl_group = hl,
+      })
+    end
+  end
+end
 
 H.highlight_status = function(status_code, line_nr)
   if not H.detail_buf or not vim.api.nvim_buf_is_valid(H.detail_buf) then return end
