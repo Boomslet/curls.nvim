@@ -245,12 +245,28 @@ H.build_curl = function(ep)
 
   if H.BODY_METHODS[ep.method] then
     table.insert(parts, "    -H 'Content-Type: application/json' \\")
-    table.insert(parts, "    -d '{}' \\")
+    local body = H.build_json_body(ep.fields or {})
+    table.insert(parts, ("    -d '%s' \\"):format(body))
   end
 
   table.insert(parts, ("    '%s'"):format(url))
 
   return parts
+end
+
+--- Build a JSON body string from resolved type fields.
+---@param fields table<string, string>
+---@return string
+H.build_json_body = function(fields)
+  if vim.tbl_isempty(fields) then return '{}' end
+
+  local pairs_list = {}
+  for k, v in pairs(fields) do
+    table.insert(pairs_list, ('"%s": %s'):format(k, v))
+  end
+  table.sort(pairs_list)
+
+  return '{ ' .. table.concat(pairs_list, ', ') .. ' }'
 end
 
 -- ============================================================================

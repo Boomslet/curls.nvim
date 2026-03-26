@@ -9,7 +9,7 @@
           (object) @endpoint.config
           (_) @endpoint.handler)))))
 
-; Encore.ts raw: export const name = api.raw({ ... }, async (req, resp) => ...)
+; Encore.ts variant: export const name = api.streamOut<ReqType, ResType>({ ... }, handler)
 (export_statement
   declaration: (lexical_declaration
     (variable_declarator
@@ -18,6 +18,7 @@
         function: (member_expression
           object: (identifier) @_fn2 (#eq? @_fn2 "api")
           property: (property_identifier) @endpoint.variant)
+        type_arguments: (type_arguments) @endpoint.type_args
         arguments: (arguments
           (object) @endpoint.config
           (_) @endpoint.handler)))))

@@ -1,6 +1,18 @@
 local M = {} -- Module (public)
 local H = {} -- Helpers (private)
 
+H.STREAM_VARIANTS = {
+  streamOut = true,
+  streamIn = true,
+  streamInOut = true,
+}
+
+H.TYPE_DEFAULTS = {
+  string = '""',
+  number = '0',
+  boolean = 'true',
+}
+
 --- Parse all Encore.ts endpoints in a buffer.
 ---@param bufnr number
 ---@return table[] endpoints
@@ -8,19 +20,13 @@ M.parse_buffer = function(bufnr)
   bufnr = bufnr or vim.api.nvim_get_current_buf()
 
   local ok, parser = pcall(vim.treesitter.get_parser, bufnr, 'typescript')
-  if not ok or not parser then
-    return {}
-  end
+  if not ok or not parser then return {} end
 
   local trees = parser:parse()
-  if not trees or #trees == 0 then
-    return {}
-  end
+  if not trees or #trees == 0 then return {} end
 
   local query = H.get_query()
-  if not query then
-    return {}
-  end
+  if not query then return {} end
 
   local root = trees[1]:root()
   local endpoints = {}
@@ -39,26 +45,13 @@ end
 -- Helpers
 -- ============================================================================
 
---- Load the treesitter query from the .scm file.
 ---@return vim.treesitter.Query|nil
 H.get_query = function()
-  -- Cache after first load
-  if H.cached_query then
-    return H.cached_query
-  end
-
   local ok, query = pcall(vim.treesitter.query.get, 'typescript', 'curls')
-  if ok and query then
-    H.cached_query = query
-    return query
-  end
-
+  if ok and query then return query end
   return nil
 end
 
-H.cached_query = nil
-
---- Extract a single endpoint from a treesitter match.
 H.extract_endpoint = function(match, query, bufnr)
   local captures = {}
   for id, nodes in pairs(match) do
@@ -72,35 +65,38 @@ H.extract_endpoint = function(match, query, bufnr)
 
   local name = vim.treesitter.get_node_text(captures['endpoint.name'], bufnr)
   local config = H.extract_config(captures['endpoint.config'], bufnr)
-  local raw = captures['endpoint.variant'] ~= nil
+  local variant = captures['endpoint.variant']
+      and vim.treesitter.get_node_text(captures['endpoint.variant'], bufnr)
+      or nil
+  local is_stream = variant and H.STREAM_VARIANTS[variant] or false
 
-  local method = config.method or (raw and '*' or 'GET')
+  local method = config.method or (is_stream and 'POST' or 'GET')
   local path = config.path or ('/' .. name)
 
-  local request_type_node = nil
-  local request_type_name = nil
-  if not raw and captures['endpoint.handler'] then
-    request_type_node, request_type_name = H.extract_request_type(captures['endpoint.handler'], bufnr)
+  local fields = {}
+  if is_stream and captures['endpoint.type_args'] then
+    fields = H.resolve_type_args(captures['endpoint.type_args'], bufnr)
+  elseif captures['endpoint.handler'] then
+    local type_node = H.extract_handler_type(captures['endpoint.handler'], bufnr)
+    if type_node then
+      fields = H.resolve_object_type(type_node, bufnr)
+    end
   end
-
-  local line = captures['endpoint.name']:start()
 
   return {
     name = name,
-    file = vim.api.nvim_buf_get_name(bufnr),
-    line = line + 1,
+    line = captures['endpoint.name']:start() + 1,
     method = method:upper(),
     path = path,
     path_params = H.extract_path_params(path),
-    raw = raw,
-    expose = config.expose == 'true',
-    auth = config.auth == 'true',
-    request_type_node = request_type_node,
-    request_type_name = request_type_name,
+    fields = fields,
   }
 end
 
---- Walk a config object node and extract key-value pairs.
+-- ============================================================================
+-- Config extraction
+-- ============================================================================
+
 H.extract_config = function(node, bufnr)
   local config = {}
   for child in node:iter_children() do
@@ -108,10 +104,8 @@ H.extract_config = function(node, bufnr)
       local key_node = child:child(0)
       local val_node = child:child(2)
       if key_node and val_node then
-        local key = vim.treesitter.get_node_text(key_node, bufnr)
-        local val = vim.treesitter.get_node_text(val_node, bufnr)
-        key = key:gsub('["\']', '')
-        val = val:gsub('^["\']', ''):gsub('["\']$', '')
+        local key = vim.treesitter.get_node_text(key_node, bufnr):gsub('["\']', '')
+        local val = vim.treesitter.get_node_text(val_node, bufnr):gsub('^["\']', ''):gsub('["\']$', '')
         config[key] = val
       end
     end
@@ -119,39 +113,6 @@ H.extract_config = function(node, bufnr)
   return config
 end
 
---- Extract the request type annotation from the handler function node.
-H.extract_request_type = function(handler_node, bufnr)
-  local params_node = nil
-  for child in handler_node:iter_children() do
-    if child:type() == 'formal_parameters' then
-      params_node = child
-      break
-    end
-  end
-
-  if not params_node then
-    return nil, nil
-  end
-
-  for child in params_node:iter_children() do
-    if child:type() == 'required_parameter' then
-      for sub in child:iter_children() do
-        if sub:type() == 'type_annotation' then
-          for type_child in sub:iter_children() do
-            if type_child:type() ~= ':' then
-              local type_text = vim.treesitter.get_node_text(type_child, bufnr)
-              return type_child, type_text
-            end
-          end
-        end
-      end
-    end
-  end
-
-  return nil, nil
-end
-
---- Extract path parameter names from a path string.
 ---@param path string e.g. "/items/:id/sub/:subId"
 ---@return string[]
 H.extract_path_params = function(path)
@@ -160,6 +121,112 @@ H.extract_path_params = function(path)
     table.insert(params, param)
   end
   return params
+end
+
+-- ============================================================================
+-- Type resolution
+-- ============================================================================
+
+--- Find the first child of a node matching a given type.
+---@param node TSNode
+---@param type_name string
+---@return TSNode|nil
+H.find_child = function(node, type_name)
+  for child in node:iter_children() do
+    if child:type() == type_name then
+      return child
+    end
+  end
+  return nil
+end
+
+--- Extract the first type argument from type_arguments node.
+H.resolve_type_args = function(type_args_node, bufnr)
+  for child in type_args_node:iter_children() do
+    local t = child:type()
+    if t ~= '<' and t ~= '>' and t ~= ',' then
+      return H.resolve_object_type(child, bufnr)
+    end
+  end
+  return {}
+end
+
+--- Extract the type annotation from the handler's first parameter.
+H.extract_handler_type = function(handler_node, bufnr)
+  local params = H.find_child(handler_node, 'formal_parameters')
+  if not params then return nil end
+
+  local param = H.find_child(params, 'required_parameter')
+  if not param then return nil end
+
+  local annotation = H.find_child(param, 'type_annotation')
+  if not annotation then return nil end
+
+  -- Return the first non-colon child (the actual type node)
+  for child in annotation:iter_children() do
+    if child:type() ~= ':' then
+      return child
+    end
+  end
+  return nil
+end
+
+--- Resolve an object type node into a table of { field_name = placeholder_value }.
+H.resolve_object_type = function(node, bufnr)
+  local fields = {}
+
+  if node:type() ~= 'object_type' then return fields end
+
+  for child in node:iter_children() do
+    if child:type() == 'property_signature' then
+      local field_name, field_value = H.resolve_property(child, bufnr)
+      if field_name then
+        fields[field_name] = field_value
+      end
+    end
+  end
+
+  return fields
+end
+
+--- Resolve a single property_signature into a name and placeholder value.
+H.resolve_property = function(node, bufnr)
+  local name = nil
+  local value = '"TODO"'
+
+  for child in node:iter_children() do
+    if child:type() == 'property_identifier' then
+      name = vim.treesitter.get_node_text(child, bufnr)
+    elseif child:type() == 'type_annotation' then
+      for type_child in child:iter_children() do
+        value = H.resolve_type_node(type_child, bufnr) or value
+      end
+    end
+  end
+
+  return name, value
+end
+
+--- Resolve a single type node to its placeholder value.
+---@return string|nil
+H.resolve_type_node = function(node, bufnr)
+  local t = node:type()
+
+  if t == 'predefined_type' or t == 'type_identifier' then
+    local type_name = vim.treesitter.get_node_text(node, bufnr)
+    return H.TYPE_DEFAULTS[type_name]
+  elseif t == 'array_type' then
+    return '[]'
+  elseif t == 'object_type' then
+    return '{}'
+  elseif t == 'union_type' then
+    for member in node:iter_children() do
+      local resolved = H.resolve_type_node(member, bufnr)
+      if resolved then return resolved end
+    end
+  end
+
+  return nil
 end
 
 return M
