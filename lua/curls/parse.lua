@@ -25,8 +25,8 @@ M.parse_buffer = function(bufnr)
   local trees = parser:parse()
   if not trees or #trees == 0 then return {} end
 
-  local query = H.get_query()
-  if not query then return {} end
+  local ok, query = pcall(vim.treesitter.query.get, 'typescript', 'curls')
+  if not ok or not query then return {} end
 
   local root = trees[1]:root()
   local endpoints = {}
@@ -44,13 +44,6 @@ end
 -- ============================================================================
 -- Helpers
 -- ============================================================================
-
----@return vim.treesitter.Query|nil
-H.get_query = function()
-  local ok, query = pcall(vim.treesitter.query.get, 'typescript', 'curls')
-  if ok and query then return query end
-  return nil
-end
 
 H.extract_endpoint = function(match, query, bufnr)
   local captures = {}
@@ -85,7 +78,6 @@ H.extract_endpoint = function(match, query, bufnr)
 
   return {
     name = name,
-    line = captures['endpoint.name']:start() + 1,
     method = method:upper(),
     path = path,
     path_params = H.extract_path_params(path),

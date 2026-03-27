@@ -3,18 +3,7 @@ local H = {} -- Helpers (private)
 
 H.BODY_METHODS = { POST = true, PUT = true, PATCH = true }
 H.NS = vim.api.nvim_create_namespace('curls')
-
--- Default highlight groups — users can override by defining these before loading the plugin
-vim.api.nvim_set_hl(0, 'CurlsStatus2xx', { default = true, link = 'DiagnosticOk' })
-vim.api.nvim_set_hl(0, 'CurlsStatus3xx', { default = true, link = 'DiagnosticInfo' })
-vim.api.nvim_set_hl(0, 'CurlsStatus4xx', { default = true, link = 'DiagnosticWarn' })
-vim.api.nvim_set_hl(0, 'CurlsStatus5xx', { default = true, link = 'DiagnosticError' })
-vim.api.nvim_set_hl(0, 'CurlsStatusErr', { default = true, link = 'DiagnosticError' })
-vim.api.nvim_set_hl(0, 'CurlsMethodGet', { default = true, link = 'Function' })
-vim.api.nvim_set_hl(0, 'CurlsMethodPost', { default = true, link = 'Keyword' })
-vim.api.nvim_set_hl(0, 'CurlsMethodPut', { default = true, link = 'Type' })
-vim.api.nvim_set_hl(0, 'CurlsMethodPatch', { default = true, link = 'Type' })
-vim.api.nvim_set_hl(0, 'CurlsMethodDelete', { default = true, link = 'DiagnosticError' })
+H.highlights_set = false
 
 H.STATUS_TEXT = {
   [200] = 'OK', [201] = 'Created', [204] = 'No Content',
@@ -76,6 +65,8 @@ end
 -- ============================================================================
 
 H.create_windows = function()
+  H.setup_highlights()
+
   local width = math.floor(vim.o.columns * 0.8)
   local total_height = math.floor(vim.o.lines * 0.8)
   local top = math.floor((vim.o.lines - total_height) / 2)
@@ -92,7 +83,8 @@ H.create_windows = function()
     border = 'rounded',
   }
 
-  H.list_buf = H.create_scratch_buf()
+  H.list_buf = vim.api.nvim_create_buf(false, true)
+  vim.bo[H.list_buf].bufhidden = 'wipe'
   H.list_win = vim.api.nvim_open_win(H.list_buf, true, vim.tbl_extend('force', base, {
     height = list_height,
     row = top,
@@ -100,29 +92,19 @@ H.create_windows = function()
     title_pos = 'center',
   }))
 
-  H.detail_buf = H.create_scratch_buf()
+  H.detail_buf = vim.api.nvim_create_buf(false, true)
+  vim.bo[H.detail_buf].bufhidden = 'wipe'
   H.detail_win = vim.api.nvim_open_win(H.detail_buf, false, vim.tbl_extend('force', base, {
     height = detail_height,
     row = top + list_height + 2,
   }))
 
-  H.set_win_opts(H.list_win, { cursorline = true })
-  H.set_win_opts(H.detail_win, {})
-end
-
-H.create_scratch_buf = function()
-  local buf = vim.api.nvim_create_buf(false, true)
-  vim.bo[buf].bufhidden = 'wipe'
-  return buf
-end
-
-H.set_win_opts = function(win, extra)
-  vim.wo[win].number = false
-  vim.wo[win].relativenumber = false
-  vim.wo[win].signcolumn = 'no'
-  for k, v in pairs(extra) do
-    vim.wo[win][k] = v
+  for _, win in ipairs({ H.list_win, H.detail_win }) do
+    vim.wo[win].number = false
+    vim.wo[win].relativenumber = false
+    vim.wo[win].signcolumn = 'no'
   end
+  vim.wo[H.list_win].cursorline = true
 end
 
 -- ============================================================================
@@ -498,6 +480,23 @@ H.METHOD_HL = {
   PATCH = 'CurlsMethodPatch',
   DELETE = 'CurlsMethodDelete',
 }
+
+H.setup_highlights = function()
+  if H.highlights_set then return end
+  H.highlights_set = true
+
+  local hl = vim.api.nvim_set_hl
+  hl(0, 'CurlsStatus2xx', { default = true, link = 'DiagnosticOk' })
+  hl(0, 'CurlsStatus3xx', { default = true, link = 'DiagnosticInfo' })
+  hl(0, 'CurlsStatus4xx', { default = true, link = 'DiagnosticWarn' })
+  hl(0, 'CurlsStatus5xx', { default = true, link = 'DiagnosticError' })
+  hl(0, 'CurlsStatusErr', { default = true, link = 'DiagnosticError' })
+  hl(0, 'CurlsMethodGet', { default = true, link = 'Function' })
+  hl(0, 'CurlsMethodPost', { default = true, link = 'Keyword' })
+  hl(0, 'CurlsMethodPut', { default = true, link = 'Type' })
+  hl(0, 'CurlsMethodPatch', { default = true, link = 'Type' })
+  hl(0, 'CurlsMethodDelete', { default = true, link = 'DiagnosticError' })
+end
 
 H.highlight_methods = function()
   if not H.list_buf or not vim.api.nvim_buf_is_valid(H.list_buf) then return end

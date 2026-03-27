@@ -18,7 +18,7 @@ end
 --- Save data for the current project.
 ---@param data table { base_url?: string, curls?: table<string, string[]> }
 M.save = function(data)
-  H.ensure_dir()
+  vim.fn.mkdir(H.DIR, 'p')
   local path = H.store_path()
   local ok, encoded = pcall(vim.json.encode, data)
   if not ok then return end
@@ -50,10 +50,6 @@ H.project_key = function()
   end
   -- Fallback to working directory
   return vim.fn.getcwd()
-end
-
-H.ensure_dir = function()
-  vim.fn.mkdir(H.DIR, 'p')
 end
 
 H.read_file = function(path)
