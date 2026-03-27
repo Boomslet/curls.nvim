@@ -90,6 +90,7 @@ H.extract_endpoint = function(match, query, bufnr)
     path = path,
     path_params = H.extract_path_params(path),
     fields = fields,
+    stream = is_stream,
   }
 end
 
