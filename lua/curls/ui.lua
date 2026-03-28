@@ -1,7 +1,6 @@
 local M = {} -- Module (public)
 local H = {} -- Helpers (private)
 
-H.BODY_METHODS = { POST = true, PUT = true, PATCH = true }
 H.NS = vim.api.nvim_create_namespace('curls')
 H.highlights_set = false
 
@@ -235,7 +234,8 @@ H.render_detail = function()
   if not ep then return end
 
   -- Use saved curl lines if the user has edited them, otherwise generate fresh
-  local curl_lines = ep.edited_curl or H.build_curl(ep)
+  local curl = require('curls.curl')
+  local curl_lines = ep.edited_curl or curl.build(ep, H.base_url)
   local curl_line_count = #curl_lines
 
   local lines = vim.list_extend({}, curl_lines)
@@ -275,49 +275,6 @@ H.format_status_detail = function(ep)
   return string.format('  %d %s  %dms  %d bytes', ep.last_status, text, ep.last_time or 0, size)
 end
 
----@param ep table
----@return string[]
-H.build_curl = function(ep)
-  local url = H.base_url .. ep.path
-
-  for _, param in ipairs(ep.path_params or {}) do
-    url = url:gsub(':' .. param, '{' .. param .. '}')
-  end
-
-  local parts = { ('  curl -s -X %s \\'):format(ep.method) }
-
-  if H.BODY_METHODS[ep.method] then
-    table.insert(parts, "    -H 'Content-Type: application/json' \\")
-    local body_fields = {}
-    local path_param_set = {}
-    for _, p in ipairs(ep.path_params or {}) do path_param_set[p] = true end
-    for k, v in pairs(ep.fields or {}) do
-      if not path_param_set[k] then body_fields[k] = v end
-    end
-    local body = H.build_json_body(body_fields)
-    table.insert(parts, ("    -d '%s' \\"):format(body))
-  end
-
-  table.insert(parts, ("    '%s'"):format(url))
-
-  return parts
-end
-
---- Build a JSON body string from resolved type fields.
----@param fields table<string, string>
----@return string
-H.build_json_body = function(fields)
-  if vim.tbl_isempty(fields) then return '{}' end
-
-  local pairs_list = {}
-  for k, v in pairs(fields) do
-    table.insert(pairs_list, ('"%s": %s'):format(k, v))
-  end
-  table.sort(pairs_list)
-
-  return '{ ' .. table.concat(pairs_list, ', ') .. ' }'
-end
-
 -- ============================================================================
 -- Execution
 -- ============================================================================
@@ -328,7 +285,8 @@ H.execute_curl = function()
 
   -- Read the curl from the detail buffer (respects user edits)
   local detail_lines = vim.api.nvim_buf_get_lines(H.detail_buf, 0, -1, false)
-  local args = H.parse_curl_args(detail_lines)
+  local curl = require('curls.curl')
+  local args = curl.parse_args(detail_lines)
   if not args then return end
 
   -- Inject -w to capture status code (not shown in the editable curl)
@@ -356,10 +314,11 @@ H.execute_curl = function()
           ep.last_response = 'Error: ' .. err
         else
           local raw = table.concat(stdout, '\n')
-          local body, status_code = H.split_curl_output(raw)
+          local curl_mod = require('curls.curl')
+          local body, status_code = curl_mod.split_output(raw)
           ep.last_status = status_code
           ep.last_time = elapsed
-          ep.last_response = H.pretty_json(body)
+          ep.last_response = curl_mod.pretty_json(body)
         end
 
         H.render_detail()
@@ -368,106 +327,6 @@ H.execute_curl = function()
   })
 end
 
---- Parse the curl command from detail buffer lines into an args list.
---- Strips the leading 'curl' word and joins continuation lines.
----@param lines string[]
----@return string[]|nil
-H.parse_curl_args = function(lines)
-  local raw = {}
-  for _, line in ipairs(lines) do
-    local trimmed = vim.trim(line)
-    if trimmed == '' then break end
-    trimmed = trimmed:gsub('%s*\\$', '')
-    if trimmed ~= '' then
-      table.insert(raw, trimmed)
-    end
-  end
-  if #raw == 0 then return nil end
-
-  -- Join into one string, strip leading 'curl', then split into args
-  local joined = table.concat(raw, ' ')
-  joined = joined:gsub('^curl%s+', '')
-
-  -- Shell-like arg splitting (respects single and double quotes)
-  local args = {}
-  local i = 1
-  while i <= #joined do
-    -- Skip whitespace
-    while i <= #joined and joined:sub(i, i):match('%s') do i = i + 1 end
-    if i > #joined then break end
-
-    local c = joined:sub(i, i)
-    if c == "'" or c == '"' then
-      -- Quoted arg: find matching close quote
-      local close = joined:find(c, i + 1, true)
-      if close then
-        table.insert(args, joined:sub(i + 1, close - 1))
-        i = close + 1
-      else
-        table.insert(args, joined:sub(i + 1))
-        break
-      end
-    else
-      -- Unquoted arg: read until whitespace or quote
-      local start = i
-      while i <= #joined and not joined:sub(i, i):match('[%s\'"]') do i = i + 1 end
-      table.insert(args, joined:sub(start, i - 1))
-    end
-  end
-
-  return args
-end
-
---- Split curl -w output: body is everything except the last line (status code).
----@param raw string
----@return string body, number status_code
-H.split_curl_output = function(raw)
-  local lines = vim.split(raw, '\n')
-  while #lines > 0 and lines[#lines] == '' do
-    table.remove(lines)
-  end
-  local status_code = tonumber(table.remove(lines) or '') or 0
-  return table.concat(lines, '\n'), status_code
-end
-
---- Pretty-print JSON if possible, otherwise return as-is.
----@param str string
----@return string
-H.pretty_json = function(str)
-  local ok, decoded = pcall(vim.json.decode, str)
-  if not ok then return str end
-  return H.json_encode_pretty(decoded, 0)
-end
-
----@param val any
----@param indent number
----@return string
-H.json_encode_pretty = function(val, indent)
-  local pad = string.rep('  ', indent)
-  local inner = string.rep('  ', indent + 1)
-
-  if type(val) == 'table' then
-    if vim.islist(val) then
-      if #val == 0 then return '[]' end
-      local items = {}
-      for _, v in ipairs(val) do
-        table.insert(items, inner .. H.json_encode_pretty(v, indent + 1))
-      end
-      return '[\n' .. table.concat(items, ',\n') .. '\n' .. pad .. ']'
-    else
-      local keys = vim.tbl_keys(val)
-      if #keys == 0 then return '{}' end
-      table.sort(keys)
-      local items = {}
-      for _, k in ipairs(keys) do
-        table.insert(items, inner .. vim.json.encode(k) .. ': ' .. H.json_encode_pretty(val[k], indent + 1))
-      end
-      return '{\n' .. table.concat(items, ',\n') .. '\n' .. pad .. '}'
-    end
-  end
-
-  return vim.json.encode(val)
-end
 
 -- ============================================================================
 -- Utilities
@@ -530,13 +389,29 @@ H.highlight_status = function(status_code, line_nr)
   })
 end
 
-H.set_lines = function(buf, lines, start, stop)
+H.set_lines = function(buf, lines)
   vim.bo[buf].modifiable = true
-  vim.api.nvim_buf_set_lines(buf, start or 0, stop or -1, false, lines)
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
   vim.bo[buf].modifiable = false
 end
 
 H.reset = function()
+  -- Capture any in-progress edits from the detail buffer before saving
+  if H.detail_buf and vim.api.nvim_buf_is_valid(H.detail_buf) and H.prev_row then
+    local ep = H.endpoints[H.prev_row]
+    if ep then
+      local buf_lines = vim.api.nvim_buf_get_lines(H.detail_buf, 0, -1, false)
+      local curl_lines = {}
+      for _, line in ipairs(buf_lines) do
+        if vim.trim(line) == '' then break end
+        table.insert(curl_lines, line)
+      end
+      if #curl_lines > 0 then
+        ep.edited_curl = curl_lines
+      end
+    end
+  end
+
   if H.on_close then
     pcall(H.on_close, H.endpoints, H.base_url)
   end
