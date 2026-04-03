@@ -289,6 +289,11 @@ H.execute_curl = function()
   local args = curl.parse_args(detail_lines)
   if not args then return end
 
+  ep.last_status = nil
+  ep.last_time = nil
+  ep.last_response = nil
+  H.render_detail()
+
   -- Inject -w to capture status code (not shown in the editable curl)
   vim.list_extend(args, { '-w', '\n%{http_code}' })
 
@@ -314,11 +319,10 @@ H.execute_curl = function()
           ep.last_response = 'Error: ' .. err
         else
           local raw = table.concat(stdout, '\n')
-          local curl_mod = require('curls.curl')
-          local body, status_code = curl_mod.split_output(raw)
+          local body, status_code = curl.split_output(raw)
           ep.last_status = status_code
           ep.last_time = elapsed
-          ep.last_response = curl_mod.pretty_json(body)
+          ep.last_response = curl.pretty_json(body)
         end
 
         H.render_detail()
